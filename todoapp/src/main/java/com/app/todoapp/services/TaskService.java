@@ -15,4 +15,11 @@ public class TaskService {
     public List<Task> getAllTasks() {
         return taskRepository.findAll();
     }
+
+    public void createTask(String title) {
+        Task task = new Task();
+        task.setCompleted(false);
+        task.setTitle(title);
+        taskRepository.save(task);
+    }
 }
