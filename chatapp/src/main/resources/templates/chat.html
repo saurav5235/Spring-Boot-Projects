@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-Time Chat App (One Page)</title>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+  <style>
+    html, body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f3f4f6;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background: white;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .chat-header {
+      background: linear-gradient(90deg, #2563eb, #1d4ed8);
+      color: white;
+      padding: 20px 40px;
+      font-size: 26px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 25px 60px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      background: #f9fafb;
+    }
+
+    .message {
+      max-width: 60%;
+      padding: 15px 20px;
+      border-radius: 20px;
+      line-height: 1.5;
+      font-size: 17px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+      word-wrap: break-word;
+    }
+
+    .sent {
+      align-self: flex-end;
+      background-color: #2563eb;
+      color: white;
+      border-bottom-right-radius: 5px;
+    }
+
+    .received {
+      align-self: flex-start;
+      background-color: #e5e7eb;
+      color: #111;
+      border-bottom-left-radius: 5px;
+    }
+
+    .chat-input {
+      display: flex;
+      border-top: 1px solid #ddd;
+      padding: 15px 50px;
+      background: #fff;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chat-input input {
+      flex: 1;
+      padding: 14px;
+      border-radius: 8px;
+      border: 2px solid #ccc;
+      font-size: 17px;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    .chat-input input:focus {
+      border-color: #2563eb;
+    }
+
+    .chat-input button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 14px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .chat-input button:hover {
+      background-color: #1d4ed8;
+    }
+
+    .name-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 40px;
+      background: #e0e7ff;
+      border-bottom: 1px solid #c7d2fe;
+    }
+
+    .name-box input {
+      padding: 10px;
+      border-radius: 6px;
+      border: 1.5px solid #2563eb;
+      font-size: 16px;
+      outline: none;
+      width: 250px;
+    }
+
+    .name-box button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .name-box button:hover {
+      background-color: #1d4ed8;
+    }
+
+    /* Scrollbar styling */
+    .chat-messages::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: #bbb;
+      border-radius: 10px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
+  </style>
+
+</head>
+
+<body>
+<div class="chat-container">
+  <div class="chat-header">
+    💬 Real-Time Chat Application
+    <span id="userLabel">Not connected</span>
+  </div>
+
+  <!-- Name Input -->
+  <div class="name-box">
+    <input type="text" id="username" placeholder="Enter your name..." />
+    <button onclick="connect()">Connect</button>
+  </div>
+
+  <!-- Messages -->
+  <div class="chat-messages" id="messages"></div>
+
+  <!-- Message Input -->
+  <div class="chat-input">
+    <input type="text" id="message" placeholder="Type a message..." disabled />
+    <button onclick="sendMessage()" disabled id="sendBtn">Send</button>
+  </div>
+
+</div>
+
+<script>
+  let stompClient = null;
+  let username = null;
+
+  function connect() {
+    username = document.getElementById("username").value.trim();
+    if (!username) {
+      alert("Please enter your name first!");
+      return;
+    }
+
+    const socket = new SockJS('/chat');
+    stompClient = Stomp.over(socket);
+
+    stompClient.connect({}, function () {
+      document.getElementById("userLabel").textContent = "Connected as " + username;
+      document.getElementById("message").disabled = false;
+      document.getElementById("sendBtn").disabled = false;
+
+      stompClient.subscribe('/topic/messages', function (msg) {
+        const message = JSON.parse(msg.body);
+        showMessage(message);
+      });
+
+      stompClient.send("/app/chat.register", {}, JSON.stringify({ sender: username, type: 'JOIN' }));
+    });
+  }
+
+  function sendMessage() {
+    const msgInput = document.getElementById("message");
+    const messageContent = msgInput.value.trim();
+
+    if (messageContent && stompClient) {
+      const chatMessage = {
+        sender: username,
+        content: messageContent,
+        type: 'CHAT'
+      };
+      stompClient.send("/app/sendMessage", {}, JSON.stringify(chatMessage));
+      msgInput.value = '';
+    }
+  }
+
+  function showMessage(message) {
+    const msgArea = document.getElementById("messages");
+    const msgEl = document.createElement('div');
+    msgEl.classList.add('message');
+    msgEl.classList.add(message.sender === username ? 'sent' : 'received');
+    msgEl.innerHTML = `<strong>${message.sender}</strong>: ${message.content}`;
+    msgArea.appendChild(msgEl);
+    msgArea.scrollTop = msgArea.scrollHeight;
+  }
+</script>
+
+</body>
+</html>
